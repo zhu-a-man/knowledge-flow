@@ -31,37 +31,59 @@ VISION_MODEL = "deepseek-chat"     # DeepSeek-V3 支持图片输入
 
 client = OpenAI(api_key=os.getenv(API_KEY_ENV), base_url=BASE_URL)
 
-EXTRACTION_SYSTEM_PROMPT = """你是一个知识提取专家。你的任务是从用户提供的内容中提取结构化知识，
-帮助用户构建个人知识框架。
+EXTRACTION_SYSTEM_PROMPT = """你是一名专业的知识管理专家，擅长将碎片化内容提炼为结构化知识，帮用户建立可复用的个人知识框架。
 
-【主题分类原则】
-- 主题必须是高度概括的大类，如：产品思维、AI技术、市场营销、个人成长、编程开发、健康健身、投资理财、设计创作
-- 不要把具体内容作为主题名（比如不要写"ChatGPT使用技巧"，应该写"AI技术"）
-- 同一个大方向的内容应归入同一主题
+━━━ 第一步：判断内容类型 ━━━
+- list（清单类）：推荐合集、工具列表、技巧汇总，有明确编号条目
+- insight（观点类）：作者分享思考、方法论、经验总结
+- tutorial（教程类）：有操作步骤的指南、攻略
+- news（资讯类）：新闻、产品发布、行业动态
 
-【维度分类原则】
-- 维度是主题下的二级分类，比"主题"具体，比"要点"宽泛
-- 例：主题=产品思维，维度=用户研究；主题=AI技术，维度=提示词工程
-- 维度应该能容纳多篇文章的内容
+━━━ 第二步：三层分类（由粗到细）━━━
+一级主题（最宽泛，选一个）：
+  AI技术 / 产品设计 / 内容创作 / 个人成长 / 商业运营 / 技术开发 / 投资理财 / 健康生活
 
-【要点提取原则】
-- 提取 3-5 个真正有用的知识点，不是摘要
-- 每个要点是一个独立的、可复用的知识/方法/结论
-- 用简洁的一句话表达，15-30字为佳
+二级维度（中等粒度，举例）：
+  AI技术 → 工具推荐 / 提示词技巧 / 行业应用 / 前沿资讯
+  产品设计 → 用户研究 / 增长策略 / 交互设计
+  内容创作 → 写作技巧 / 选题方法 / 传播策略
 
-只返回 JSON，不要有任何其他文字、解释或代码块标记。"""
+━━━ 第三步：要点提取规则 ━━━
+【list 清单类】——最重要规则：原文有几条就提取几条，绝对不能遗漏
+  格式：「序号. 名称 — 一句话说明它能解决什么问题或有什么价值」
+  示例：「1. Cursor — AI编程工具，写代码速度提升10倍」
 
-EXTRACTION_USER_PROMPT = """请分析以下内容，返回结构化知识提取结果：
+【insight 观点类】——提取3-5个可直接复用的结论
+  格式：动词开头的行动建议或认知升级句
+  示例：「用"结果导向"替代"任务导向"来设计产品功能」
 
+【tutorial 教程类】——提取关键步骤或核心原则
+  格式：「步骤/原则（15字以内，可操作）」
+
+【news 资讯类】——提取最值得关注的事实和影响
+  格式：「事件要点 + 为什么重要」
+
+━━━ 通用要求 ━━━
+- 语言通俗易懂，避免术语堆砌
+- 每个要点独立成立，无需上下文即可理解
+- 只返回 JSON，不要任何其他文字"""
+
+EXTRACTION_USER_PROMPT = """内容如下，请按规则提取：
+
+标题：{title}
+链接：{url}
+
+正文：
 {content}
 
-返回格式：
+返回 JSON：
 {{
+  "content_type": "list 或 insight 或 tutorial 或 news",
   "topic": "一级主题",
   "dimension": "二级维度",
-  "key_points": ["要点1", "要点2", "要点3"],
-  "summary": "一句话概括这篇内容的核心价值（20字以内）",
-  "content_type": "article 或 post 或 video_transcript"
+  "key_points": ["要点1", "要点2", ...],
+  "summary": "一句话概括核心价值（20字以内）",
+  "source_url": "{url}"
 }}"""
 
 
@@ -83,15 +105,19 @@ def _chat(model: str, messages: list, max_tokens: int = 1000) -> str:
     return response.choices[0].message.content
 
 
-def extract_from_text(text: str, title: str = "") -> dict:
+def extract_from_text(text: str, title: str = "", url: str = "") -> dict:
     """从文字内容中提取结构化知识（公众号文章正文 / 粘贴文字）"""
-    content = f"标题：{title}\n\n正文：{text}" if title else text
     try:
         raw = _chat(
             model=TEXT_MODEL,
+            max_tokens=2000,
             messages=[
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": EXTRACTION_USER_PROMPT.format(content=content[:6000])},
+                {"role": "user", "content": EXTRACTION_USER_PROMPT.format(
+                    title=title or "（无标题）",
+                    url=url or "（无链接）",
+                    content=text[:8000],
+                )},
             ],
         )
         return _parse_json_safely(raw)
@@ -119,9 +145,13 @@ def extract_from_image(image_base64: str) -> dict:
                         {
                             "type": "text",
                             "text": (
-                                "这是一张截图。请先阅读图片中的所有文字内容，"
+                                "这是一张截图。请先完整阅读图片中的所有文字，"
                                 "然后按照要求提取结构化知识。\n\n"
-                                + EXTRACTION_USER_PROMPT.format(content="（见上方图片）")
+                                + EXTRACTION_USER_PROMPT.format(
+                                    title="（图片内容）",
+                                    url="（截图，无链接）",
+                                    content="（见上方图片，请完整提取所有条目）",
+                                )
                             ),
                         },
                     ],

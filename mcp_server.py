@@ -12,6 +12,22 @@ def _get_ai():
     from ai_processor import extract_from_text, extract_from_image
     return extract_from_text, extract_from_image
 
+def _format_save_result(r: dict, knowledge: dict, url: str) -> str:
+    """统一格式化保存结果，输出通俗、结构清晰的消息。"""
+    points = knowledge.get("key_points", [])
+    points_text = "\n".join(f"  {p}" for p in points)
+    source_line = f"\n🔗 来源：{url}" if url else ""
+    view_url = "https://knowledge-flow-production-f40d.up.railway.app/view"
+    return (
+        f"{r['message']}\n\n"
+        f"📌 {knowledge.get('topic')} › {knowledge.get('dimension')}\n"
+        f"💡 {knowledge.get('summary', '')}\n\n"
+        f"📝 提取要点：\n{points_text}"
+        f"{source_line}\n\n"
+        f"📊 查看完整知识图谱：{view_url}"
+    )
+
+
 # ── MCP Server 定义 ───────────────────────────────────────────────
 mcp = FastMCP(
     "KnowledgeFlow 知识库",
@@ -34,7 +50,7 @@ def save_article(url: str) -> str:
         return f"❌ 链接提取失败：{result['error']}\n\n💡 提示：可以把文章正文复制后用 save_text 保存。"
 
     extract_from_text, _ = _get_ai()
-    knowledge = extract_from_text(result["text"], result.get("title", ""))
+    knowledge = extract_from_text(result["text"], result.get("title", ""), url)
     if "error" in knowledge:
         return f"❌ AI 处理失败：{knowledge['error']}"
 
@@ -43,13 +59,7 @@ def save_article(url: str) -> str:
         "url": url,
         "platform": "公众号",
     })
-    return (
-        f"{r['message']}\n\n"
-        f"📌 主题：{knowledge.get('topic')}\n"
-        f"🔖 维度：{knowledge.get('dimension')}\n"
-        f"💡 摘要：{knowledge.get('summary', '')}\n"
-        f"📝 要点：\n" + "\n".join(f"  • {p}" for p in knowledge.get("key_points", []))
-    )
+    return _format_save_result(r, knowledge, url)
 
 
 @mcp.tool()
@@ -68,13 +78,7 @@ def save_text(content: str, title: str = "") -> str:
         "url": "",
         "platform": "手动",
     })
-    return (
-        f"{r['message']}\n\n"
-        f"📌 主题：{knowledge.get('topic')}\n"
-        f"🔖 维度：{knowledge.get('dimension')}\n"
-        f"💡 摘要：{knowledge.get('summary', '')}\n"
-        f"📝 要点：\n" + "\n".join(f"  • {p}" for p in knowledge.get("key_points", []))
-    )
+    return _format_save_result(r, knowledge, "")
 
 
 @mcp.tool()
@@ -133,20 +137,28 @@ async def view_knowledge():
     kb = get_all()
     s = get_stats()
     outline = kb_to_text_outline(kb)
-    mindmap_html = render_mindmap_html(kb_to_markdown(kb)) if kb.get("topics") else ""
+    has_content = bool(kb.get("topics"))
+    return HTMLResponse(_render_view_page(s, outline, has_content))
 
-    return HTMLResponse(_render_view_page(s, outline, mindmap_html))
+
+@app.get("/mindmap", response_class=HTMLResponse)
+async def view_mindmap():
+    """单独的思维导图页面，用 iframe src 加载避免 srcdoc 转义问题。"""
+    kb = get_all()
+    if not kb.get("topics"):
+        return HTMLResponse("<html><body style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888'>还没有内容，先保存几篇文章吧！</body></html>")
+    return HTMLResponse(render_mindmap_html(kb_to_markdown(kb)))
 
 
-def _render_view_page(stats: dict, outline: str, mindmap_html: str) -> str:
+def _render_view_page(stats: dict, outline: str, has_content: bool) -> str:
     outline_escaped = (
         outline.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
+    # 使用 src="/mindmap" 独立页面，避免 srcdoc 转义和 CDN 加载问题
     mindmap_section = (
-        f'<iframe id="mindmap-frame" srcdoc="{mindmap_html.replace(chr(34), "&quot;")}"'
-        ' style="width:100%;height:580px;border:none;border-radius:12px;"></iframe>'
-        if mindmap_html else
-        '<div style="padding:40px;text-align:center;color:#888;">还没有内容，先用龙虾发一篇文章试试！</div>'
+        '<iframe src="/mindmap" style="width:100%;height:580px;border:none;border-radius:12px;"></iframe>'
+        if has_content else
+        '<div style="padding:60px;text-align:center;color:#aaa;font-size:1.1rem;">还没有内容，先用龙虾发一篇文章试试！</div>'
     )
 
     return f"""<!DOCTYPE html>
@@ -255,7 +267,7 @@ async def api_save_article(req: ArticleReq, authorization: str = Header(default=
         return JSONResponse({"success": False, "message": result["error"]}, status_code=422)
 
     extract_from_text, _ = _get_ai()
-    knowledge = extract_from_text(result["text"], result.get("title", ""))
+    knowledge = extract_from_text(result["text"], result.get("title", ""), req.url)
     if "error" in knowledge:
         return JSONResponse({"success": False, "message": knowledge["error"]}, status_code=500)
 

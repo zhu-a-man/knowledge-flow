@@ -53,14 +53,15 @@ POST /api/save-text
 ```
 ✅ 已保存到知识库
 
-📌 主题：{topic}
-🔖 维度：{dimension}
-💡 摘要：{summary}
+📌 AI技术 › 工具推荐
+💡 6个提升效率的必装AI技能
 
-📝 提取到的要点：
-• {key_point_1}
-• {key_point_2}
-• {key_point_3}
+📝 提取要点：
+  1. Cursor — AI编程助手，写代码效率提升10倍
+  2. Perplexity — AI搜索引擎，替代传统搜索更精准
+  3. ...（有几条列几条，不省略）
+
+🔗 来源：https://mp.weixin.qq.com/...
 
 📊 查看完整知识图谱：https://knowledge-flow-production-f40d.up.railway.app/view
 ```
