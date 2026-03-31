@@ -121,7 +121,7 @@ def list_topics() -> str:
 
 
 # ── FastAPI App（挂载 MCP + 知识图谱查看页）────────────────────────
-app = FastAPI(title="KnowledgeFlow MCP Server")
+app = FastAPI(title="KnowledgeFlow MCP Server", version="2.1.0")
 
 # 将 MCP server 挂载到 /mcp 路径（OpenClaw 连接此地址）
 app.mount("/mcp", mcp.streamable_http_app())
