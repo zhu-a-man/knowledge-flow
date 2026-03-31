@@ -10,10 +10,10 @@ def kb_to_markdown(kb: dict) -> str:
     return "\n".join(lines)
 
 
-# 每个层级的颜色（topic 级别循环使用）
+# 主题左边框颜色（绿色系循环）
 _TOPIC_COLORS = [
-    "#6c63ff", "#1D9E75", "#D85A30", "#378ADD",
-    "#BA7517", "#c0392b", "#8e44ad", "#16a085",
+    "#52b788", "#2d6a4f", "#40916c", "#74c69d",
+    "#1b4332", "#95d5b2", "#27ae60", "#b7e4c7",
 ]
 
 

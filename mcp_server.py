@@ -146,82 +146,259 @@ def _render_view_page(stats: dict, tree_html: str) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🧠 KnowledgeFlow</title>
+<title>KnowledgeFlow · 我的知识库</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-          background: #f0f2f8; color: #2d3436; min-height: 100vh; }}
+  body {{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background: #f3f7f4;
+    color: #2c3e35;
+    min-height: 100vh;
+    font-size: 15px;
+  }}
 
-  header {{ background: linear-gradient(135deg,#6c63ff,#48dbfb);
-            padding: 24px 24px 20px; color: #fff; }}
-  header h1 {{ font-size: 1.5rem; font-weight: 700; letter-spacing: .5px; }}
-  header p  {{ opacity: .85; margin-top: 4px; font-size: .85rem; }}
+  /* ── 顶栏 ──────────────────────────── */
+  header {{
+    background: #fff;
+    border-bottom: 1px solid #e2ede6;
+    padding: 18px 20px 14px;
+  }}
+  header h1 {{
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #2d6a4f;
+    letter-spacing: .3px;
+  }}
+  header p {{
+    margin-top: 3px;
+    font-size: .78rem;
+    color: #95b8a2;
+  }}
 
-  .stats {{ display:flex; gap:12px; padding: 16px 16px 8px; flex-wrap:wrap; }}
-  .stat-card {{ background:#fff; border-radius:12px; padding:14px 18px;
-                box-shadow:0 2px 8px rgba(0,0,0,.06); flex:1; min-width:90px; text-align:center; }}
-  .stat-card .num {{ font-size:1.7rem; font-weight:700; color:#6c63ff; line-height:1; }}
-  .stat-card .lbl {{ font-size:.72rem; color:#636e72; margin-top:4px; }}
+  /* ── 统计卡片（一行四列）─────────────── */
+  .stats {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 14px 16px 6px;
+  }}
+  .stat-card {{
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 10px 12px;
+    text-align: center;
+    border: 1px solid #e2ede6;
+  }}
+  .stat-card .num {{
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: #2d6a4f;
+    line-height: 1;
+  }}
+  .stat-card .lbl {{
+    font-size: .68rem;
+    color: #95b8a2;
+    margin-top: 5px;
+    letter-spacing: .3px;
+  }}
 
-  .tree {{ padding: 12px 16px 40px; }}
+  /* ── 知识树容器 ──────────────────────── */
+  .tree {{ padding: 14px 16px 48px; }}
 
-  /* ── 主题块 ─────────────────────────── */
-  .topic-block {{ margin-bottom: 12px; border-radius: 14px;
-                  background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.07); overflow:hidden; }}
-  .topic-summary {{ display:flex; align-items:center; justify-content:space-between;
-                    padding: 16px 20px; cursor:pointer; list-style:none; gap:8px;
-                    border-radius:14px; transition: background .15s; }}
-  .topic-summary::-webkit-details-marker {{ display:none; }}
-  .topic-summary:hover {{ background:#f8f7ff; }}
-  .topic-name {{ font-size:1.05rem; font-weight:700; flex:1; }}
-  .topic-meta {{ font-size:.75rem; color:#b2bec3; white-space:nowrap; }}
-  .topic-block[open] .topic-summary {{ border-radius:14px 14px 0 0; background:#f8f7ff; }}
-  .topic-body {{ padding: 0 16px 12px; }}
+  /* ── 主题块（一级）────────────────────── */
+  .topic-block {{
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #d4e8db;
+    overflow: hidden;
+  }}
+  .topic-summary {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 18px;
+    cursor: pointer;
+    list-style: none;
+    gap: 8px;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }}
+  .topic-summary::-webkit-details-marker {{ display: none; }}
+  .topic-name {{
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1b4332;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }}
+  .topic-name::before {{
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #52b788;
+    flex-shrink: 0;
+  }}
+  .topic-meta {{
+    font-size: .7rem;
+    color: #95b8a2;
+    white-space: nowrap;
+  }}
+  /* 展开时顶部高亮 */
+  .topic-block[open] > .topic-summary {{
+    border-bottom: 1px solid #d4e8db;
+    background: #f6fbf7;
+  }}
 
-  /* ── 维度块 ─────────────────────────── */
-  .dim-block {{ margin: 8px 0; border-radius:10px;
-                background:#f8f9fc; border:1px solid #eaedf3; }}
-  .dim-summary {{ display:flex; align-items:center; justify-content:space-between;
-                  padding: 12px 16px; cursor:pointer; list-style:none; gap:8px; }}
-  .dim-summary::-webkit-details-marker {{ display:none; }}
-  .dim-name {{ font-size:.92rem; font-weight:600; color:#2d3436; flex:1; }}
-  .dim-meta {{ font-size:.72rem; color:#b2bec3; white-space:nowrap; }}
-  .dim-block[open] .dim-summary {{ border-bottom:1px solid #eaedf3; }}
-  .dim-body {{ padding: 10px 16px 14px; }}
+  /* ── 主题体（用连接线表达父子关系）─────── */
+  .topic-body {{
+    padding: 10px 14px 12px 14px;
+    position: relative;
+  }}
+  /* 左侧竖线 */
+  .topic-body::before {{
+    content: "";
+    position: absolute;
+    left: 28px;
+    top: 10px;
+    bottom: 12px;
+    width: 1.5px;
+    background: linear-gradient(to bottom, #b7e4c7, #d4e8db);
+    border-radius: 2px;
+  }}
 
-  /* ── 要点列表 ────────────────────────── */
-  .points {{ padding-left:0; list-style:none; margin:0 0 10px; }}
-  .points li {{ padding: 6px 0 6px 20px; position:relative;
-                font-size:.88rem; line-height:1.6; color:#2d3436;
-                border-bottom:1px dashed #f0f2f8; }}
-  .points li:last-child {{ border-bottom:none; }}
-  .points li::before {{ content:counter(li-counter);
-                         counter-increment:li-counter;
-                         position:absolute; left:0; top:7px;
-                         width:16px; height:16px; background:#6c63ff;
-                         color:#fff; font-size:.65rem; font-weight:700;
-                         border-radius:50%; display:flex; align-items:center;
-                         justify-content:center; }}
-  .points {{ counter-reset:li-counter; }}
+  /* ── 维度块（二级）────────────────────── */
+  .dim-block {{
+    margin: 6px 0 6px 28px;
+    border-radius: 10px;
+    background: #f6fbf7;
+    border: 1px solid #d4e8db;
+    position: relative;
+  }}
+  /* 维度左侧横线（连接竖线）*/
+  .dim-block::before {{
+    content: "";
+    position: absolute;
+    left: -14px;
+    top: 50%;
+    width: 14px;
+    height: 1.5px;
+    background: #b7e4c7;
+    transform: translateY(-50%);
+  }}
+  .dim-summary {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    cursor: pointer;
+    list-style: none;
+    gap: 8px;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }}
+  .dim-summary::-webkit-details-marker {{ display: none; }}
+  .dim-name {{
+    font-size: .88rem;
+    font-weight: 600;
+    color: #2d6a4f;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }}
+  .dim-name::before {{
+    content: "›";
+    color: #52b788;
+    font-size: 1rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }}
+  .dim-meta {{
+    font-size: .68rem;
+    color: #95b8a2;
+    white-space: nowrap;
+  }}
+  .dim-block[open] > .dim-summary {{
+    border-bottom: 1px solid #d4e8db;
+  }}
+  .dim-body {{ padding: 10px 14px 12px; }}
+
+  /* ── 要点列表（三级）──────────────────── */
+  .points {{
+    list-style: none;
+    padding: 0;
+    margin: 0 0 8px;
+    counter-reset: pt-counter;
+  }}
+  .points li {{
+    counter-increment: pt-counter;
+    padding: 7px 0 7px 28px;
+    position: relative;
+    font-size: .84rem;
+    line-height: 1.65;
+    color: #3a5042;
+    border-bottom: 1px solid #eef5f0;
+  }}
+  .points li:last-child {{ border-bottom: none; padding-bottom: 0; }}
+  .points li::before {{
+    content: counter(pt-counter);
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 18px;
+    height: 18px;
+    background: #d8f3dc;
+    color: #2d6a4f;
+    font-size: .65rem;
+    font-weight: 700;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 18px;
+    text-align: center;
+  }}
 
   /* ── 来源区 ──────────────────────────── */
-  .sources {{ margin-top:8px; padding-top:8px; border-top:1px solid #eaedf3;
-              display:flex; flex-wrap:wrap; align-items:center; gap:6px;
-              font-size:.75rem; }}
-  .src-label {{ color:#b2bec3; white-space:nowrap; }}
-  .src-link {{ color:#6c63ff; text-decoration:none; border-bottom:1px dotted #6c63ff; }}
-  .src-link:hover {{ color:#48dbfb; }}
-  .src-nolink {{ color:#636e72; }}
-  .src-date {{ color:#dfe6e9; font-size:.68rem; }}
+  .sources {{
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #d4e8db;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: .73rem;
+  }}
+  .src-label {{ color: #b2c9bb; }}
+  .src-link {{
+    color: #52b788;
+    text-decoration: none;
+    border-bottom: 1px dotted #52b788;
+  }}
+  .src-link:hover {{ color: #2d6a4f; border-color: #2d6a4f; }}
+  .src-nolink {{ color: #74a58a; }}
+  .src-date {{ color: #c5dcd0; font-size: .68rem; }}
 
-  .empty-tip {{ text-align:center; padding:60px 20px;
-                color:#b2bec3; font-size:1rem; line-height:2; }}
+  .empty-tip {{
+    text-align: center;
+    padding: 60px 20px;
+    color: #b2c9bb;
+    font-size: .95rem;
+    line-height: 2.2;
+  }}
 </style>
 </head>
 <body>
+
 <header>
-  <h1>🧠 KnowledgeFlow</h1>
-  <p>把你刷到的内容，变成自己的知识框架</p>
+  <h1>KnowledgeFlow</h1>
+  <p>把你刷到的内容，慢慢变成自己的知识</p>
 </header>
 
 <div class="stats">
