@@ -1,5 +1,5 @@
 def kb_to_markdown(kb: dict) -> str:
-    """将知识库转为 Markdown 层级结构（供 markmap 渲染）"""
+    """将知识库转为 Markdown 层级（供 MCP 工具文字回复使用）"""
     lines = ["# 我的知识框架"]
     for topic, topic_data in kb.get("topics", {}).items():
         lines.append(f"\n## {topic}")
@@ -10,70 +10,92 @@ def kb_to_markdown(kb: dict) -> str:
     return "\n".join(lines)
 
 
-def kb_to_text_outline(kb: dict) -> str:
-    """将知识库转为文字大纲（文字视图展示）"""
+# 每个层级的颜色（topic 级别循环使用）
+_TOPIC_COLORS = [
+    "#6c63ff", "#1D9E75", "#D85A30", "#378ADD",
+    "#BA7517", "#c0392b", "#8e44ad", "#16a085",
+]
+
+
+def kb_to_html_tree(kb: dict) -> str:
+    """
+    将知识库渲染为纯 HTML 可折叠树。
+    无 JS、无 CDN 依赖，原生 <details>/<summary> 实现折叠，
+    完整展示：主题 → 维度 → 要点（编号列表）+ 来源链接。
+    """
     topics = kb.get("topics", {})
     if not topics:
-        return "暂无内容，添加第一篇文章开始构建你的知识框架。"
+        return '<p class="empty-tip">还没有内容，先用龙虾发一篇文章试试！</p>'
 
-    lines = []
-    for topic, topic_data in topics.items():
-        lines.append(f"## 📚 {topic}")
-        for dim, dim_data in topic_data.get("dimensions", {}).items():
+    blocks = []
+    for idx, (topic, topic_data) in enumerate(topics.items()):
+        color = _TOPIC_COLORS[idx % len(_TOPIC_COLORS)]
+        dims = topic_data.get("dimensions", {})
+        total_pts = sum(len(d["points"]) for d in dims.values())
+        total_src = sum(len(d["sources"]) for d in dims.values())
+
+        dim_blocks = []
+        for dim, dim_data in dims.items():
             points = dim_data.get("points", [])
             sources = dim_data.get("sources", [])
-            lines.append(f"\n**{dim}** （{len(sources)} 篇来源，{len(points)} 个要点）")
-            for i, point in enumerate(points, 1):
-                lines.append(f"  {i}. {point}")
-        lines.append("")
-    return "\n".join(lines)
+
+            # 要点列表
+            if points:
+                pts_html = "<ol class='points'>" + "".join(
+                    f"<li>{_esc(p)}</li>" for p in points
+                ) + "</ol>"
+            else:
+                pts_html = ""
+
+            # 来源链接
+            src_items = []
+            for s in sources:
+                url = s.get("url", "")
+                title = _esc(s.get("title") or "未知标题")
+                date = s.get("date", "")
+                if url:
+                    src_items.append(
+                        f'<a href="{_esc(url)}" target="_blank" class="src-link">'
+                        f'{title}</a><span class="src-date">{date}</span>'
+                    )
+                else:
+                    src_items.append(
+                        f'<span class="src-nolink">{title}</span>'
+                        f'<span class="src-date">{date}</span>'
+                    )
+
+            src_html = (
+                '<div class="sources"><span class="src-label">📎 来源</span>'
+                + " &nbsp;·&nbsp; ".join(src_items)
+                + "</div>"
+            ) if src_items else ""
+
+            dim_blocks.append(f"""
+<details class="dim-block">
+  <summary class="dim-summary">
+    <span class="dim-name">{_esc(dim)}</span>
+    <span class="dim-meta">{len(sources)} 篇来源 · {len(points)} 个要点</span>
+  </summary>
+  <div class="dim-body">
+    {pts_html}
+    {src_html}
+  </div>
+</details>""")
+
+        blocks.append(f"""
+<details class="topic-block" open>
+  <summary class="topic-summary" style="border-left:4px solid {color}">
+    <span class="topic-name">{_esc(topic)}</span>
+    <span class="topic-meta">{len(dims)} 个维度 · {total_pts} 个要点 · {total_src} 篇来源</span>
+  </summary>
+  <div class="topic-body">
+    {"".join(dim_blocks)}
+  </div>
+</details>""")
+
+    return "\n".join(blocks)
 
 
-def render_mindmap_html(markdown_content: str) -> str:
-    """
-    生成内嵌 markmap 的完整 HTML，供 Streamlit components.html() 渲染。
-
-    注意：使用固定版本 CDN 避免 markmap-lib 与 markmap-view 共用
-    window.markmap 命名空间导致的属性覆盖问题（坑点：两者都写 window.markmap，
-    后加载的会覆盖先加载的导出，需保证 markmap-lib 在 markmap-view 之后加载）。
-    """
-    # 转义反引号和 $ 防止 JS 模板字符串语法冲突
-    escaped = markdown_content.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-  body {{ margin: 0; overflow: hidden; background: transparent; }}
-  #mindmap {{ width: 100%; height: 520px; }}
-  .markmap-node text {{
-    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  }}
-</style>
-</head>
-<body>
-<div id="mindmap"></div>
-<!-- 加载顺序：d3 → markmap-view → markmap-lib（不可颠倒）-->
-<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.4/dist/browser/index.js"></script>
-<script>
-(async () => {{
-  const {{ Transformer }} = window.markmap;
-  const {{ Markmap }} = window.markmap;
-  const transformer = new Transformer();
-  const md = `{escaped}`;
-  const {{ root }} = transformer.transform(md);
-  const mm = Markmap.create('#mindmap', {{
-    maxWidth: 300,
-    color: (node) => {{
-      const colors = ['#7F77DD', '#1D9E75', '#D85A30', '#378ADD', '#BA7517'];
-      return colors[node.depth % colors.length];
-    }}
-  }}, root);
-  mm.fit();
-}})();
-</script>
-</body>
-</html>"""
+def _esc(s: str) -> str:
+    """最小化 HTML 转义"""
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

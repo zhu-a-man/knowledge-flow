@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 
 from extractor import extract_from_url
 from knowledge_store import add_knowledge, get_all, get_stats
-from mindmap_renderer import kb_to_markdown, render_mindmap_html, kb_to_text_outline
+from mindmap_renderer import kb_to_markdown, kb_to_html_tree
 
 # AI 模块延迟导入，避免缺少环境变量时启动即崩溃
 def _get_ai():
@@ -133,34 +133,14 @@ async def root():
 
 @app.get("/view", response_class=HTMLResponse)
 async def view_knowledge():
-    """知识图谱查看页面（思维导图 + 文字大纲）。"""
+    """知识树查看页面，纯 HTML 渲染，无 JS 依赖。"""
     kb = get_all()
     s = get_stats()
-    outline = kb_to_text_outline(kb)
-    has_content = bool(kb.get("topics"))
-    return HTMLResponse(_render_view_page(s, outline, has_content))
+    tree_html = kb_to_html_tree(kb)
+    return HTMLResponse(_render_view_page(s, tree_html))
 
 
-@app.get("/mindmap", response_class=HTMLResponse)
-async def view_mindmap():
-    """单独的思维导图页面，用 iframe src 加载避免 srcdoc 转义问题。"""
-    kb = get_all()
-    if not kb.get("topics"):
-        return HTMLResponse("<html><body style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888'>还没有内容，先保存几篇文章吧！</body></html>")
-    return HTMLResponse(render_mindmap_html(kb_to_markdown(kb)))
-
-
-def _render_view_page(stats: dict, outline: str, has_content: bool) -> str:
-    outline_escaped = (
-        outline.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    )
-    # 使用 src="/mindmap" 独立页面，避免 srcdoc 转义和 CDN 加载问题
-    mindmap_section = (
-        '<iframe src="/mindmap" style="width:100%;height:580px;border:none;border-radius:12px;"></iframe>'
-        if has_content else
-        '<div style="padding:60px;text-align:center;color:#aaa;font-size:1.1rem;">还没有内容，先用龙虾发一篇文章试试！</div>'
-    )
-
+def _render_view_page(stats: dict, tree_html: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -170,27 +150,72 @@ def _render_view_page(stats: dict, outline: str, has_content: bool) -> str:
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-          background: #f5f6fa; color: #2d3436; }}
+          background: #f0f2f8; color: #2d3436; min-height: 100vh; }}
+
   header {{ background: linear-gradient(135deg,#6c63ff,#48dbfb);
-            padding: 24px 32px; color: #fff; }}
-  header h1 {{ font-size: 1.6rem; font-weight: 700; }}
-  header p  {{ opacity: .85; margin-top: 4px; font-size: .9rem; }}
-  .stats {{ display:flex; gap:16px; padding: 20px 32px; flex-wrap:wrap; }}
-  .stat-card {{ background:#fff; border-radius:12px; padding:16px 24px;
-                box-shadow:0 2px 8px rgba(0,0,0,.06); flex:1; min-width:120px; }}
-  .stat-card .num {{ font-size:2rem; font-weight:700; color:#6c63ff; }}
-  .stat-card .lbl {{ font-size:.8rem; color:#636e72; margin-top:4px; }}
-  .tabs {{ display:flex; gap:8px; padding: 0 32px 16px; }}
-  .tab {{ padding:8px 20px; border-radius:20px; cursor:pointer; font-size:.9rem;
-          background:#fff; border:1.5px solid #dfe6e9; transition:.2s; }}
-  .tab.active {{ background:#6c63ff; color:#fff; border-color:#6c63ff; }}
-  .panel {{ padding: 0 32px 32px; display:none; }}
-  .panel.active {{ display:block; }}
-  #outline-panel pre {{ background:#fff; border-radius:12px; padding:24px;
-                        box-shadow:0 2px 8px rgba(0,0,0,.06);
-                        white-space:pre-wrap; line-height:1.8; font-size:.9rem;
-                        font-family:inherit; }}
-  .refresh {{ float:right; font-size:.8rem; color:#b2bec3; margin-top:6px; }}
+            padding: 24px 24px 20px; color: #fff; }}
+  header h1 {{ font-size: 1.5rem; font-weight: 700; letter-spacing: .5px; }}
+  header p  {{ opacity: .85; margin-top: 4px; font-size: .85rem; }}
+
+  .stats {{ display:flex; gap:12px; padding: 16px 16px 8px; flex-wrap:wrap; }}
+  .stat-card {{ background:#fff; border-radius:12px; padding:14px 18px;
+                box-shadow:0 2px 8px rgba(0,0,0,.06); flex:1; min-width:90px; text-align:center; }}
+  .stat-card .num {{ font-size:1.7rem; font-weight:700; color:#6c63ff; line-height:1; }}
+  .stat-card .lbl {{ font-size:.72rem; color:#636e72; margin-top:4px; }}
+
+  .tree {{ padding: 12px 16px 40px; }}
+
+  /* ── 主题块 ─────────────────────────── */
+  .topic-block {{ margin-bottom: 12px; border-radius: 14px;
+                  background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.07); overflow:hidden; }}
+  .topic-summary {{ display:flex; align-items:center; justify-content:space-between;
+                    padding: 16px 20px; cursor:pointer; list-style:none; gap:8px;
+                    border-radius:14px; transition: background .15s; }}
+  .topic-summary::-webkit-details-marker {{ display:none; }}
+  .topic-summary:hover {{ background:#f8f7ff; }}
+  .topic-name {{ font-size:1.05rem; font-weight:700; flex:1; }}
+  .topic-meta {{ font-size:.75rem; color:#b2bec3; white-space:nowrap; }}
+  .topic-block[open] .topic-summary {{ border-radius:14px 14px 0 0; background:#f8f7ff; }}
+  .topic-body {{ padding: 0 16px 12px; }}
+
+  /* ── 维度块 ─────────────────────────── */
+  .dim-block {{ margin: 8px 0; border-radius:10px;
+                background:#f8f9fc; border:1px solid #eaedf3; }}
+  .dim-summary {{ display:flex; align-items:center; justify-content:space-between;
+                  padding: 12px 16px; cursor:pointer; list-style:none; gap:8px; }}
+  .dim-summary::-webkit-details-marker {{ display:none; }}
+  .dim-name {{ font-size:.92rem; font-weight:600; color:#2d3436; flex:1; }}
+  .dim-meta {{ font-size:.72rem; color:#b2bec3; white-space:nowrap; }}
+  .dim-block[open] .dim-summary {{ border-bottom:1px solid #eaedf3; }}
+  .dim-body {{ padding: 10px 16px 14px; }}
+
+  /* ── 要点列表 ────────────────────────── */
+  .points {{ padding-left:0; list-style:none; margin:0 0 10px; }}
+  .points li {{ padding: 6px 0 6px 20px; position:relative;
+                font-size:.88rem; line-height:1.6; color:#2d3436;
+                border-bottom:1px dashed #f0f2f8; }}
+  .points li:last-child {{ border-bottom:none; }}
+  .points li::before {{ content:counter(li-counter);
+                         counter-increment:li-counter;
+                         position:absolute; left:0; top:7px;
+                         width:16px; height:16px; background:#6c63ff;
+                         color:#fff; font-size:.65rem; font-weight:700;
+                         border-radius:50%; display:flex; align-items:center;
+                         justify-content:center; }}
+  .points {{ counter-reset:li-counter; }}
+
+  /* ── 来源区 ──────────────────────────── */
+  .sources {{ margin-top:8px; padding-top:8px; border-top:1px solid #eaedf3;
+              display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+              font-size:.75rem; }}
+  .src-label {{ color:#b2bec3; white-space:nowrap; }}
+  .src-link {{ color:#6c63ff; text-decoration:none; border-bottom:1px dotted #6c63ff; }}
+  .src-link:hover {{ color:#48dbfb; }}
+  .src-nolink {{ color:#636e72; }}
+  .src-date {{ color:#dfe6e9; font-size:.68rem; }}
+
+  .empty-tip {{ text-align:center; padding:60px 20px;
+                color:#b2bec3; font-size:1rem; line-height:2; }}
 </style>
 </head>
 <body>
@@ -200,36 +225,28 @@ def _render_view_page(stats: dict, outline: str, has_content: bool) -> str:
 </header>
 
 <div class="stats">
-  <div class="stat-card"><div class="num">{stats['total_items']}</div><div class="lbl">已处理内容</div></div>
-  <div class="stat-card"><div class="num">{stats['total_topics']}</div><div class="lbl">知识主题</div></div>
-  <div class="stat-card"><div class="num">{stats['total_dimensions']}</div><div class="lbl">知识维度</div></div>
-  <div class="stat-card"><div class="num">{stats['total_points']}</div><div class="lbl">知识要点</div></div>
+  <div class="stat-card">
+    <div class="num">{stats['total_items']}</div>
+    <div class="lbl">已处理</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{stats['total_topics']}</div>
+    <div class="lbl">主题</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{stats['total_dimensions']}</div>
+    <div class="lbl">维度</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{stats['total_points']}</div>
+    <div class="lbl">要点</div>
+  </div>
 </div>
 
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('mindmap')">🗺️ 思维导图</div>
-  <div class="tab" onclick="switchTab('outline')">📝 文字大纲</div>
+<div class="tree">
+  {tree_html}
 </div>
 
-<div id="mindmap-panel" class="panel active">
-  {mindmap_section}
-</div>
-
-<div id="outline-panel" class="panel">
-  <pre>{outline_escaped}</pre>
-</div>
-
-<script>
-function switchTab(name) {{
-  document.querySelectorAll('.tab').forEach((t,i) => {{
-    t.classList.toggle('active', (i === 0 && name==='mindmap') || (i===1 && name==='outline'));
-  }});
-  document.getElementById('mindmap-panel').classList.toggle('active', name==='mindmap');
-  document.getElementById('outline-panel').classList.toggle('active', name==='outline');
-}}
-// 每 60 秒自动刷新，保持数据最新
-setTimeout(() => location.reload(), 60000);
-</script>
 </body>
 </html>"""
 
