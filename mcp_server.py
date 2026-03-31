@@ -222,6 +222,106 @@ setTimeout(() => location.reload(), 60000);
 </html>"""
 
 
+# ── REST API（供不支持 MCP 的平台调用）────────────────────────────
+from fastapi import Header, HTTPException
+from pydantic import BaseModel
+
+class ArticleReq(BaseModel):
+    url: str
+
+class TextReq(BaseModel):
+    content: str
+    title: str = ""
+
+def _verify(authorization: str = Header(default="")):
+    """简单 Bearer Token 校验，Railway 里设置 KF_API_KEY 环境变量。"""
+    secret = os.getenv("KF_API_KEY", "")
+    if not secret:
+        return          # 未设置 key 时不校验（方便本地开发）
+    token = authorization.removeprefix("Bearer ").strip()
+    if token != secret:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+@app.post("/api/save-article")
+async def api_save_article(req: ArticleReq, authorization: str = Header(default="")):
+    """
+    REST 接口：从文章链接提取知识并保存。
+    Headers: Authorization: Bearer {KF_API_KEY}
+    Body:    {"url": "https://..."}
+    """
+    _verify(authorization)
+    result = extract_from_url(req.url)
+    if "error" in result:
+        return JSONResponse({"success": False, "message": result["error"]}, status_code=422)
+
+    extract_from_text, _ = _get_ai()
+    knowledge = extract_from_text(result["text"], result.get("title", ""))
+    if "error" in knowledge:
+        return JSONResponse({"success": False, "message": knowledge["error"]}, status_code=500)
+
+    r = add_knowledge(knowledge, {
+        "title": result.get("title", "未知标题"),
+        "url": req.url,
+        "platform": "公众号",
+    })
+    return {
+        "success": True,
+        "message": r["message"],
+        "topic": knowledge.get("topic"),
+        "dimension": knowledge.get("dimension"),
+        "summary": knowledge.get("summary"),
+        "key_points": knowledge.get("key_points", []),
+    }
+
+
+@app.post("/api/save-text")
+async def api_save_text(req: TextReq, authorization: str = Header(default="")):
+    """
+    REST 接口：从文字内容提取知识并保存。
+    Headers: Authorization: Bearer {KF_API_KEY}
+    Body:    {"content": "...", "title": "..."}
+    """
+    _verify(authorization)
+    extract_from_text, _ = _get_ai()
+    knowledge = extract_from_text(req.content, req.title)
+    if "error" in knowledge:
+        return JSONResponse({"success": False, "message": knowledge["error"]}, status_code=500)
+
+    r = add_knowledge(knowledge, {
+        "title": req.title or "手动输入",
+        "url": "",
+        "platform": "手动",
+    })
+    return {
+        "success": True,
+        "message": r["message"],
+        "topic": knowledge.get("topic"),
+        "dimension": knowledge.get("dimension"),
+        "summary": knowledge.get("summary"),
+        "key_points": knowledge.get("key_points", []),
+    }
+
+
+@app.get("/api/stats")
+async def api_stats(authorization: str = Header(default="")):
+    """REST 接口：获取知识库统计数据。"""
+    _verify(authorization)
+    return get_stats()
+
+
+@app.get("/api/topics")
+async def api_topics(authorization: str = Header(default="")):
+    """REST 接口：获取所有主题和维度列表。"""
+    _verify(authorization)
+    kb = get_all()
+    result = []
+    for topic, data in kb.get("topics", {}).items():
+        dims = list(data.get("dimensions", {}).keys())
+        points_count = sum(len(d["points"]) for d in data["dimensions"].values())
+        result.append({"topic": topic, "dimensions": dims, "points_count": points_count})
+    return {"topics": result}
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
