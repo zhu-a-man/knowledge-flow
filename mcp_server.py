@@ -25,8 +25,10 @@ def _format_save_result(r: dict, url: str) -> str:
     for entry in r.get("entries", []):
         topic = entry.get("topic", "")
         dim = entry.get("dimension", "")
+        form = entry.get("content_form", "")
         points = entry.get("key_points", [])
-        lines.append(f"\n📌 {topic} › {dim}")
+        form_tag = f" [{form}]" if form else ""
+        lines.append(f"\n📌 {topic} › {dim}{form_tag}")
         for p in points:
             lines.append(f"  · {p}")
 
@@ -394,6 +396,25 @@ def _render_view_page(stats: dict, tree_html: str) -> str:
   .src-link:hover {{ color: #1e3d28; }}
   .src-nolink {{ color: #6b8c72; }}
   .src-date {{ color: #c8d8c0; font-size: .66rem; }}
+
+  /* ── 内容形式标签 ──────────────────────── */
+  .form-tag {{
+    display: inline-block;
+    font-size: .58rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    vertical-align: middle;
+    margin-right: 4px;
+  }}
+  .form-tools    {{ background: #dbeafe; color: #1e40af; }}
+  .form-method   {{ background: #ede9fe; color: #5b21b6; }}
+  .form-tutorial {{ background: #dcfce7; color: #166534; }}
+  .form-news     {{ background: #ffedd5; color: #9a3412; }}
+  .form-insight  {{ background: #fef3c7; color: #92400e; }}
+  .form-story    {{ background: #e0e7ff; color: #3730a3; }}
+  .form-default  {{ background: #f3f4f6; color: #6b7280; }}
 
   .empty-tip {{
     text-align: center;

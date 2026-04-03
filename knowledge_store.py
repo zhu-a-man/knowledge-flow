@@ -22,14 +22,15 @@ DB_PATH = os.path.join(DATA_DIR, "knowledge_base.db")
 _PG_DDL = [
     """
     CREATE TABLE IF NOT EXISTS kb_entries (
-        id          SERIAL PRIMARY KEY,
-        url         TEXT NOT NULL DEFAULT '',
-        title       TEXT NOT NULL DEFAULT '',
-        platform    TEXT NOT NULL DEFAULT '',
-        summary     TEXT NOT NULL DEFAULT '',
-        topic       TEXT NOT NULL,
-        dimension   TEXT NOT NULL,
-        created_at  TEXT NOT NULL
+        id              SERIAL PRIMARY KEY,
+        url             TEXT NOT NULL DEFAULT '',
+        title           TEXT NOT NULL DEFAULT '',
+        platform        TEXT NOT NULL DEFAULT '',
+        summary         TEXT NOT NULL DEFAULT '',
+        topic           TEXT NOT NULL,
+        dimension       TEXT NOT NULL,
+        content_form    TEXT NOT NULL DEFAULT '',
+        created_at      TEXT NOT NULL
     )
     """,
     """
@@ -39,6 +40,18 @@ _PG_DDL = [
         point       TEXT NOT NULL
     )
     """,
+    # 兼容已有表：如果 content_form 列不存在则添加
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'kb_entries' AND column_name = 'content_form'
+        ) THEN
+            ALTER TABLE kb_entries ADD COLUMN content_form TEXT NOT NULL DEFAULT '';
+        END IF;
+    END $$;
+    """,
 ]
 
 # ── SQLite 表结构 ──────────────────────────────────────────────────
@@ -46,14 +59,15 @@ _SQLITE_DDL = """
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS kb_entries (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    url         TEXT NOT NULL DEFAULT '',
-    title       TEXT NOT NULL DEFAULT '',
-    platform    TEXT NOT NULL DEFAULT '',
-    summary     TEXT NOT NULL DEFAULT '',
-    topic       TEXT NOT NULL,
-    dimension   TEXT NOT NULL,
-    created_at  TEXT NOT NULL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url             TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    platform        TEXT NOT NULL DEFAULT '',
+    summary         TEXT NOT NULL DEFAULT '',
+    topic           TEXT NOT NULL,
+    dimension       TEXT NOT NULL,
+    content_form    TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS kb_points (
@@ -90,6 +104,7 @@ def _sqlite_conn():
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SQLITE_DDL)
     _migrate_v1(conn)
+    _migrate_add_content_form(conn)
     try:
         yield conn
         conn.commit()
@@ -107,8 +122,17 @@ def _to_entries_list(extracted: dict) -> list:
     return [{
         "topic": extracted.get("topic", "未分类"),
         "dimension": extracted.get("dimension", "通用"),
+        "content_form": extracted.get("content_form", ""),
         "key_points": extracted.get("key_points", []),
     }]
+
+
+def _migrate_add_content_form(conn: sqlite3.Connection):
+    """SQLite 迁移：为已有表添加 content_form 列"""
+    columns = {info[1] for info in conn.execute("PRAGMA table_info(kb_entries)").fetchall()}
+    if "content_form" not in columns:
+        conn.execute("ALTER TABLE kb_entries ADD COLUMN content_form TEXT NOT NULL DEFAULT ''")
+        conn.commit()
 
 
 # ── SQLite 历史数据迁移（仅本地用）──────────────────────────────────
@@ -180,13 +204,14 @@ def _pg_add_knowledge(url, title, platform, summary, now, entries) -> dict:
         for entry in entries:
             topic = entry.get("topic") or "未分类"
             dimension = entry.get("dimension") or "通用"
+            content_form = entry.get("content_form") or ""
             key_points = entry.get("key_points") or []
 
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO kb_entries (url, title, platform, summary, topic, dimension, created_at)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                    (url, title, platform, summary, topic, dimension, now),
+                    "INSERT INTO kb_entries (url, title, platform, summary, topic, dimension, content_form, created_at)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (url, title, platform, summary, topic, dimension, content_form, now),
                 )
                 entry_id = cur.fetchone()[0]
                 for point in key_points:
@@ -214,12 +239,13 @@ def _sqlite_add_knowledge(url, title, platform, summary, now, entries) -> dict:
         for entry in entries:
             topic = entry.get("topic") or "未分类"
             dimension = entry.get("dimension") or "通用"
+            content_form = entry.get("content_form") or ""
             key_points = entry.get("key_points") or []
 
             cur = conn.execute(
-                "INSERT INTO kb_entries (url, title, platform, summary, topic, dimension, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (url, title, platform, summary, topic, dimension, now),
+                "INSERT INTO kb_entries (url, title, platform, summary, topic, dimension, content_form, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, platform, summary, topic, dimension, content_form, now),
             )
             entry_id = cur.lastrowid
             for point in key_points:
@@ -266,7 +292,7 @@ def _pg_get_all() -> dict:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
                 SELECT
-                    e.id, e.topic, e.dimension,
+                    e.id, e.topic, e.dimension, e.content_form,
                     e.url, e.title, e.summary, e.created_at,
                     p.point
                 FROM kb_entries e
@@ -287,7 +313,7 @@ def _sqlite_get_all() -> dict:
     with _sqlite_conn() as conn:
         rows = conn.execute("""
             SELECT
-                e.id, e.topic, e.dimension,
+                e.id, e.topic, e.dimension, e.content_form,
                 e.url, e.title, e.summary, e.created_at,
                 p.point
             FROM kb_entries e
@@ -325,6 +351,7 @@ def _build_tree(rows, total_items: int) -> dict:
                 "url": row["url"] or "",
                 "summary": row["summary"] or "",
                 "date": created[:10],
+                "content_form": row["content_form"] if "content_form" in row.keys() else "",
             })
 
     return {

@@ -73,17 +73,19 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "✨ 已按 2 个主题分类保存：AI工具、效率方法",
+  "message": "✨ 已按 2 个主题分类保存：AI与大模型、效率与工具",
   "summary": "几个工具装上去效率翻倍",
   "entries": [
     {
-      "topic": "AI工具",
-      "dimension": "编程助手",
+      "topic": "AI与大模型",
+      "dimension": "AI编程",
+      "content_form": "工具清单",
       "key_points": ["Cursor — 写代码时 AI 实时补全，速度快到不像话"]
     },
     {
-      "topic": "效率方法",
-      "dimension": "工具选型",
+      "topic": "效率与工具",
+      "dimension": "工作方法论",
+      "content_form": "观点洞察",
       "key_points": ["用"解决哪个具体问题"来选工具，不要用"功能多不多""]
     }
   ],
@@ -111,7 +113,7 @@ Content-Type: application/json
 ```
 ✅ 已保存到知识库
 
-📌 AI工具 › 编程助手
+📌 AI与大模型 › AI编程 [工具清单]
 💡 几个工具装上去效率翻倍
 
 📝 提取要点：
@@ -127,11 +129,11 @@ Content-Type: application/json
 ```
 ✅ 已按 2 个主题分类保存
 
-📌 AI工具 › 编程助手
+📌 AI与大模型 › AI编程 [工具清单]
   · Cursor — 写代码时 AI 实时补全，速度快到不像话
   · GitHub Copilot — 适合多语言切换的开发者
 
-📌 效率方法 › 工具选型
+📌 效率与工具 › 工作方法论 [观点洞察]
   · 用"解决哪个具体问题"来选，而不是看功能多不多
   · 工具越少越好，只留真正在用的
 

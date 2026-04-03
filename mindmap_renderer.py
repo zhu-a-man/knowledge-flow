@@ -7,6 +7,10 @@ def kb_to_markdown(kb: dict) -> str:
             lines.append(f"\n### {dim}")
             for point in dim_data.get("points", []):
                 lines.append(f"\n- {point}")
+            for src in dim_data.get("sources", []):
+                form = src.get("content_form", "")
+                form_tag = f" [{form}]" if form else ""
+                lines.append(f"\n  > 来源：{src.get('title', '')}{form_tag}")
     return "\n".join(lines)
 
 
@@ -53,13 +57,17 @@ def kb_to_html_tree(kb: dict) -> str:
                 url = s.get("url", "")
                 title = _esc(s.get("title") or "未知标题")
                 date = s.get("date", "")
+                form = s.get("content_form", "")
+                form_html = f'<span class="form-tag form-{_form_class(form)}">{_esc(form)}</span>' if form else ""
                 if url:
                     src_items.append(
+                        f'{form_html}'
                         f'<a href="{_esc(url)}" target="_blank" class="src-link">'
                         f'{title}</a><span class="src-date">{date}</span>'
                     )
                 else:
                     src_items.append(
+                        f'{form_html}'
                         f'<span class="src-nolink">{title}</span>'
                         f'<span class="src-date">{date}</span>'
                     )
@@ -94,6 +102,21 @@ def kb_to_html_tree(kb: dict) -> str:
 </details>""")
 
     return "\n".join(blocks)
+
+
+_FORM_CLASS_MAP = {
+    "工具清单": "tools",
+    "方法论":   "method",
+    "教程步骤": "tutorial",
+    "行业动态": "news",
+    "观点洞察": "insight",
+    "案例故事": "story",
+}
+
+
+def _form_class(form: str) -> str:
+    """将内容形式映射为 CSS 类名"""
+    return _FORM_CLASS_MAP.get(form, "default")
 
 
 def _esc(s: str) -> str:
