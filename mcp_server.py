@@ -494,6 +494,43 @@ def _render_view_page(stats: dict, tree_html: str) -> str:
     line-height: 2.4;
   }}
   .empty-tip strong {{ color: #d97706; }}
+
+  /* ── 移动端紧凑布局 ──────────────────── */
+  @media (max-width: 600px) {{
+    body {{ font-size: 13px; }}
+
+    header {{ padding: 10px 12px 9px; }}
+
+    .stats {{ gap: 5px; padding: 8px 10px 2px; }}
+    .stat-card {{ padding: 8px 4px 7px; border-radius: 8px; }}
+    .stat-card .num {{ font-size: 1.3rem; }}
+    .stat-card .lbl {{ font-size: .6rem; margin-top: 3px; }}
+
+    .tree {{ padding: 8px 10px 40px; }}
+
+    .topic-summary {{ padding: 10px 12px; }}
+    .topic-body {{ padding: 6px 8px 8px 8px; }}
+    .topic-body::before {{ left: 20px; }}
+
+    .dim-block {{ margin: 4px 0 4px 20px; }}
+    .dim-block::before {{ left: -10px; width: 10px; }}
+    .dim-summary {{ padding: 8px 10px; }}
+    .dim-body {{ padding: 6px 10px 8px; }}
+
+    .form-block {{ margin: 4px 0 4px 20px; }}
+    .form-block::before {{ left: -10px; width: 10px; }}
+    .form-summary {{ padding: 6px 10px; }}
+    .form-body {{ padding: 6px 10px 8px; }}
+
+    .points li {{ padding: 5px 0 5px 22px; font-size: .78rem; line-height: 1.55; }}
+    .points li::before {{ top: 6px; width: 15px; height: 15px; font-size: .58rem; line-height: 15px; }}
+
+    .sources {{ font-size: .65rem; gap: 3px 6px; margin-top: 5px; padding-top: 5px; }}
+    .src-date {{ font-size: .6rem; }}
+
+    .product-header {{ font-size: .82rem; padding: 4px 0; margin: 8px 0 3px; }}
+    .product-header .src-date {{ font-size: .7rem; }}
+  }}
 </style>
 </head>
 <body>
